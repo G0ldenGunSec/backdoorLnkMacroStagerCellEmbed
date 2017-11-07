@@ -2,6 +2,7 @@
 
 Disclaimer: Made for coding experience and to test client security measures as a part of engagements.  DO NOT use against any systems / users on which you do not have explicit permission to test against.
 
+NOTE: To utilize this stager several libraries must first be installed, please run the following command: pip install xlutils
 
 This is a two-step attack vector, the initial macro that a user runs will configure targeted shortcuts on their desktop to run a powershell stager. The second step occurs when the user clicks on the shortcut, the powershell download stub that runs will first open the target executable, then clean all backdoored shortcuts on the user's desktop, and finally attempt to download & execute empire launcher code from an xml file hosted on a pre-defined web server. This xml contains a full empire launcher, which will be downloaded and ran in memory, in turn giving a full empire shell back. The XML is downloaded using XmlDocument.Load method as it is inherently proxy-aware, and allows for a clean download of the launcher code.
 
