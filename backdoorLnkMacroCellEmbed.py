@@ -149,8 +149,6 @@ class Stager:
             print helpers.color("[!] Error in launcher command generation.")
             return ""
         else:
-
-
 	    try:
 	    	reader = xlrd.open_workbook(xlsOut)
 	   	workBook = copy(reader)
